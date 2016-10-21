@@ -70,5 +70,9 @@ class LayerFully(Layer):
 	def getWeight(self):
 		return self.weight
 
+	def changeWeight(self, row, col, epsilon):
+		self.weight[row][col] += epsilon
 
+	def getGrad(self):
+		return self.gradWeight
 

@@ -1,6 +1,9 @@
 import numpy as np 
 from .LayerFully import LayerFully
 import time
+import matplotlib.pyplot as plt
+import copy
+from .NetLib import initWeight, sigmoid, ReLU, sigmoidGrad, ReLUGrad
 
 class NetworkFully:
 	'''
@@ -10,6 +13,7 @@ class NetworkFully:
 		self.neuOfLayers = []
 		self.nameOfActs = []
 		self.layers = []
+		self.lossToDraw = []
 
 	def addLayer(self, numOfNeurons, nameOfAct):
 		self.neuOfLayers.append(numOfNeurons);
@@ -57,14 +61,18 @@ class NetworkFully:
 			decayTerm += decay * layer.getDecayTerm();
 
 		cost = cossTerm + decayTerm 
-		#print("M = {}. Term : {} and {}.\n".format(m, cossTerm, decayTerm))
-		#print(self.layers[-1].getWeight())
-		#time.sleep(5)
 
-		delta = h - matY
+		if self.nameOfActs[-1] == "sigmoid":
+			prime = sigmoidGrad(self.layers[-1].z)
+		elif self.nameOfActs[-1] == "ReLU":
+			prime = ReLUGrad(self.layers[-1].z)
+		else : 
+			print("Cannot find activation \n")
+		delta = (h - matY) * prime
+
 		for i in range(len(self.layers)):
-			delta = self.layers[-i-1].backprop(delta);
-			self.layers[-i-1].update(alpha, decay);
+			delta = self.layers[-i-1].backprop(delta)
+			self.layers[-i-1].update(alpha, decay)
 
 		return cost
 
@@ -72,9 +80,9 @@ class NetworkFully:
 		X = np.array(miniBatch[0])
 		X = X.T
 		y = np.array(miniBatch[1])
-		#print("Shape: {} and {}.\n".format(X.shape, y.shape))
 
 		cost = self.runGD(X, y, alpha, decay)
+		self.lossToDraw.append(cost)
 		print("Cost = {}.\n".format(cost))
 
 	def train(self, dataTraining, epochs, batchSize, alpha, decay):
@@ -83,15 +91,95 @@ class NetworkFully:
 		y = np.array([dataTraining[1]])
 
 		m = X.shape[0]
+		checkedGrad = False
 		for epoch in range(epochs):
 			print("Epoch {}:\n".format(epoch))
 			miniBatches = [[X[k:k+batchSize, :], y[:, k:k+batchSize]] for k in range(0, m, batchSize)]
 
 			for miniBatch in miniBatches:
+				if checkedGrad == False:
+					print("Checking gradient : \n")
+					checkedGrad = True
+					tmpX = np.array(miniBatch[0])
+					tmpX = tmpX.T 
+					tmpY = np.array(miniBatch[1]) 
+					self.checkGradientDescent(tmpX, tmpY)
+					input('Press somthing to continue ...\n')
+
 				self.updateMiniBatch(miniBatch, alpha, decay)
 
 	def checkShapeWeights(self):
 		for layer in self.layers:
 			print("{}.\n".format(layer.getShapeWeight()))
 
+	#Cost function don't update
+	def costNNs(self, X, y):
+		outputSize = self.neuOfLayers[-1]
+		m = X.shape[1]
+		matY = np.zeros((outputSize, m))
+
+		h = self.feedforward(X)
+
+		if self.nameOfActs[-1] == "sigmoid":
+			prime = sigmoidGrad(self.layers[-1].z)
+		elif self.nameOfActs[-1] == "ReLU":
+			prime = ReLUGrad(self.layers[-1].z)
+		else : 
+			print("Cannot find activation \n")
+		delta = (h - matY) * prime
+
+		for i in range(len(self.layers)):
+			delta = self.layers[-i-1].backprop(delta)
+
+		cost = (-1.0 / m) * sum(sum( matY*np.log2(h) + (1 - matY)*np.log2(1 - h) ))
+		return cost
+
+	# Check deriviate of coss on Weight1
+	def checkGradientDescent(self, X, y):
+		self.costNNs(X, y)
+		normGrad = self.layers[2].getGrad()
+
+		#compute numeric grad
+		epsilon = 1e-4
+		numericGrad = []
+
+		for i in range(5):
+			self.layers[2].getWeight()[0][i] += epsilon
+			cost1 = self.costNNs(X, y)
+			self.layers[2].getWeight()[0][i] -= 2*epsilon
+			cost2 = self.costNNs(X, y)
+			numericGrad.append((cost1 - cost2) / (2 * epsilon))
+			self.layers[2].getWeight()[0][i] += epsilon
+
+		for i in range(5):
+			print("{} - {}.\n".format(normGrad[0][i], numericGrad[i]))
+
+
+
 		
+
+	def predict(self, X):
+		h = self.feedforward(X);
+
+		return h.argmax(axis=0)
+
+	def evalute(self, Xtest, ytest):
+		pre = self.predict(Xtest)
+		print("Accurate : {}.\n".format(np.mean(pre == ytest)))
+
+
+	def drawLoss(self):
+		plt.plot(self.lossToDraw);
+		plt.ylabel("Loss function")
+		plt.xlabel("#.Iterations")
+		plt.show()
+
+	def saveWeight(self):
+		listWeight = []
+		tmp = []
+		for layer in self.layers :
+			tmp.append(layer.weight)
+			tmp.append(layer.bias)
+
+			listWeight.append(tmp)
+		np.save("weight", listWeight)
